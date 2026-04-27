@@ -44,7 +44,7 @@ def _bootstrap_postgres() -> tuple[str, str]:
         PostgresTelemetryRepository,
     )
 
-    eng = create_engine(DATABASE_URL, future=True)
+    eng = create_engine(DATABASE_URL, future=True, pool_pre_ping=True)
     with eng.begin() as conn:
         site_id = conn.execute(text("""
             INSERT INTO sites (name) VALUES (:n)

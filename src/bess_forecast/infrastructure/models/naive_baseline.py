@@ -25,9 +25,13 @@ class NaiveBaseline(ModelPort):
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         if self._history is None:
             raise RuntimeError("Model not fitted")
-        # X.index is the target horizon. Look up t - 1 week in the history.
         offset = pd.Timedelta(minutes=15) * QUARTERS_PER_WEEK
         lookup = X.index - offset
         h = self._history
-        # Reindex robust to missing keys (last-observation-carried-forward).
+        # If the as-of is far in the future and the lookup falls past the end of
+        # the history, rotate back by 52-week chunks to land inside (= same week
+        # of the most-recent calendar year available).
+        year = pd.Timedelta(weeks=52)
+        while lookup.max() > h.index.max():
+            lookup = lookup - year
         return h.reindex(lookup).ffill().bfill().to_numpy(dtype=float)

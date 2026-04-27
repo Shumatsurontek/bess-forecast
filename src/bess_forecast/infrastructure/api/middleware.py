@@ -32,7 +32,10 @@ def _extract_id(path: str, prefix: str) -> str | None:
 class AccessLogMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, database_url: str | None) -> None:
         super().__init__(app)
-        self._engine: Engine | None = create_engine(database_url, future=True) if database_url else None
+        self._engine: Engine | None = (
+            create_engine(database_url, future=True, pool_pre_ping=True)
+            if database_url else None
+        )
 
     async def dispatch(self, request: Request, call_next) -> Response:
         start = time.perf_counter()

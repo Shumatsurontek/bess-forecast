@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { MessageList } from '@/components/MessageList';
+import { NewChatDialog } from '@/components/NewChatDialog';
 import { SectionTitle } from '@/components/SectionTitle';
 import { ThreadList } from '@/components/ThreadList';
 import { useJob } from '@/hooks/useJob';
@@ -12,6 +14,7 @@ export default function ChatPage() {
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const [newChatOpen, setNewChatOpen] = useState(false);
 
   const threads = useQuery({
     queryKey: ['threads'],
@@ -31,16 +34,12 @@ export default function ChatPage() {
   });
 
   const createThread = useMutation({
-    mutationFn: () => {
-      const latestRunId = (runs.data as any[])?.[0]?.id;
-      return threadsRepository.create(
-        latestRunId,
-        latestRunId ? `Diagnostic for run ${latestRunId.slice(0, 8)}` : 'New conversation',
-      );
-    },
+    mutationFn: ({ runId, title }: { runId: string; title: string }) =>
+      threadsRepository.create(runId, title),
     onSuccess: (t: any) => {
       qc.invalidateQueries({ queryKey: ['threads'] });
       setActiveThreadId(t.id);
+      setNewChatOpen(false);
     },
   });
 
@@ -59,7 +58,7 @@ export default function ChatPage() {
     }
   }, [done, activeJobId, activeThreadId, qc]);
 
-  // Auto-pick the first thread (or trigger creation if none and runs exist).
+  // Auto-pick the first thread (if any).
   useEffect(() => {
     if (activeThreadId) return;
     const list = (threads.data as any[]) ?? [];
@@ -73,13 +72,18 @@ export default function ChatPage() {
     setDraft('');
   };
 
+  const activeThread = useMemo(() => {
+    const list = (threads.data as any[]) ?? [];
+    return list.find(t => t.id === activeThreadId);
+  }, [threads.data, activeThreadId]);
+
   return (
     <div className="flex">
       <ThreadList
         threads={(threads.data as any) ?? []}
         activeId={activeThreadId}
         onSelect={setActiveThreadId}
-        onNew={() => createThread.mutate()}
+        onNew={() => setNewChatOpen(true)}
       />
       <div className="flex-1 flex flex-col min-h-screen">
         <header className="px-6 pt-12 pb-4">
@@ -88,6 +92,18 @@ export default function ChatPage() {
             title="Forecast diagnostic chat"
             subtitle="Read-only LangChain agent. Ask why a run missed peaks; the tools, args and results stream live, conversation persists in Postgres."
           />
+          {activeThread?.forecast_run_id && (
+            <div className="text-sm font-mono text-muted">
+              bound to run{' '}
+              <Link
+                to={`/forecast/${activeThread.forecast_run_id}`}
+                className="text-teal hover:text-accent underline decoration-dotted"
+              >
+                {activeThread.forecast_run_id.slice(0, 8)}
+              </Link>{' '}
+              — every tool call uses this UUID
+            </div>
+          )}
         </header>
 
         {!activeThreadId && (
@@ -126,6 +142,15 @@ export default function ChatPage() {
           </>
         )}
       </div>
+
+      {newChatOpen && (
+        <NewChatDialog
+          runs={(runs.data as any) ?? []}
+          defaultRunId={(runs.data as any)?.[0]?.id}
+          onCancel={() => setNewChatOpen(false)}
+          onCreate={(runId, title) => createThread.mutate({ runId, title })}
+        />
+      )}
     </div>
   );
 }

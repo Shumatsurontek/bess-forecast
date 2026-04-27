@@ -17,7 +17,7 @@ def _dump_json(value: Any) -> str | None:
 
 class PostgresAgentRepository(AgentThreadRepository):
     def __init__(self, url: str) -> None:
-        self._engine: Engine = create_engine(url, future=True)
+        self._engine: Engine = create_engine(url, future=True, pool_pre_ping=True)
 
     # ---- threads ----
     def create_thread(

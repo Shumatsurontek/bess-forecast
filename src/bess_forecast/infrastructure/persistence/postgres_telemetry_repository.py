@@ -12,7 +12,7 @@ from bess_forecast.domain.ports.telemetry_repository import TelemetryRepository
 
 class PostgresTelemetryRepository(TelemetryRepository):
     def __init__(self, url: str) -> None:
-        self._engine: Engine = create_engine(url, future=True)
+        self._engine: Engine = create_engine(url, future=True, pool_pre_ping=True)
 
     def load(
         self, site_id: str, since: datetime, until: datetime

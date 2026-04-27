@@ -12,7 +12,7 @@ from bess_forecast.domain.ports.forecast_repository import ForecastRepository
 
 class PostgresForecastRepository(ForecastRepository):
     def __init__(self, url: str) -> None:
-        self._engine: Engine = create_engine(url, future=True)
+        self._engine: Engine = create_engine(url, future=True, pool_pre_ping=True)
 
     def save(self, run: ForecastRun, points: list[ForecastPoint]) -> None:
         with self._engine.begin() as conn:
