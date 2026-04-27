@@ -24,40 +24,53 @@ outputs/                # forecasts, figures, diagnostic reports
 ## Quickstart
 
 ```bash
-# 1. Python deps
-uv sync                       # or: pip install -e .
+# 1. Python deps + dev tools
+just setup                    # uv sync + pytest
 
-# 2. Validate the case-study CSV
-uv run python -m bess_forecast validate \
-    --csv data/load_timeseries_2025_casestudy.csv
-
-# 3. Run the full pipeline (no DB needed)
-uv run python -m bess_forecast run \
-    --csv data/load_timeseries_2025_casestudy.csv \
-    --asof 2025-12-01T00:00:00 \
-    --model lgbm
-# → outputs/forecast_<run_id>.parquet
-# → outputs/metrics_<run_id>.json
-# → outputs/figures/*.png
-
-# 4. Tests
-uv run pytest
-
-# 5. (Optional) Postgres + migrations
-cp .env.example .env
-docker compose up -d
-uv run alembic upgrade head
-
-# 6. (Optional) API + React front
-uv run python -m bess_forecast serve --reload &
-cd frontend && npm install && npm run generate:api && npm run dev
-# → http://localhost:5173
-
-# 7. (Optional) Diagnostic agent
-export OPENAI_API_KEY=... LANGSMITH_API_KEY=... LANGSMITH_TRACING=true
-uv run python -m bess_forecast diagnose --asof 2025-12-01T00:00:00
-# → outputs/reports/diagnostic_<run_id>.md  +  trace in LangSmith
+# 2. Run the dev stack (postgres + adminer + log viewer + api + front)
+cp .env.example .env          # then put your real OPENAI_API_KEY inside
+just dev                      # spawns docker, applies alembic, starts API + Vite
 ```
+
+After `just dev`:
+
+| URL | What |
+|---|---|
+| http://localhost:5173 | React app (forecast, validation, chat) |
+| http://localhost:8000/health | FastAPI health |
+| http://localhost:8000/docs | Swagger UI |
+| http://localhost:8080 | **Dozzle** — live container logs (incl. tailed API log) |
+| http://localhost:8081 | **Adminer** — Postgres SQL browser |
+
+Run a forecast from the UI, or by CLI:
+
+```bash
+just run-lgbm            # asof = 2025-07-15, peaks captured ≈ 15/15 vs naive 0/15
+just compare             # naive vs lgbm side-by-side
+uv run pytest            # 20 tests
+```
+
+### LLM / agent
+
+The diagnostic agent uses LangChain `ChatOpenAI` directly. Set the standard
+OpenAI env vars in `.env`:
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini       # any model your key has access to
+LANGSMITH_TRACING=true         # optional — traces every tool call
+LANGSMITH_API_KEY=lsv2_...
+LANGCHAIN_PROJECT=bess-forecast
+```
+
+In the `/chat` page, click **+ New chat**: a thread is created bound to the
+most-recent forecast run, and the agent can answer questions about it (4
+read-only tools: get_forecast_run, get_actuals, compute_peak_metrics,
+get_calendar_context). Tool calls and assistant replies are persisted in
+`agent_threads` / `agent_messages` and visible in Adminer.
+
+Live progress for both the forecast pipeline and the agent streams over
+`/ws/jobs/{job_id}` (typed events, see `domain/entities/progress_stage.py`).
 
 ## Part 1 — Validation
 

@@ -108,6 +108,14 @@ dev:
     set -euo pipefail
     [ -f .env ] || { echo "▸ bootstrapping .env from .env.example"; cp .env.example .env; }
     [ -f frontend/.env ] || cp frontend/.env.example frontend/.env
+    # Detect the classic drift where POSTGRES_PORT and DATABASE_URL disagree
+    # (happens when .env was generated against an older .env.example). Fix in place.
+    pg_port=$(grep -E '^POSTGRES_PORT=' .env | cut -d= -f2)
+    db_port=$(grep -oE 'localhost:[0-9]+' .env | head -1 | cut -d: -f2)
+    if [ -n "$pg_port" ] && [ -n "$db_port" ] && [ "$pg_port" != "$db_port" ]; then
+        echo "▸ .env drift: POSTGRES_PORT=$pg_port but DATABASE_URL uses :$db_port — patching"
+        sed -i.bak "s|localhost:$db_port|localhost:$pg_port|g" .env && rm -f .env.bak
+    fi
     echo "▸ freeing ports 8000 (api) and 5173 (vite)"
     for port in 8000 5173; do
         pids=$(lsof -tiTCP:$port -sTCP:LISTEN 2>/dev/null || true)

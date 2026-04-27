@@ -70,7 +70,19 @@ async def chat(
     history = repo.list_messages(thread_id)
     repo.add_message(thread_id, "user", user_message)
 
-    messages = [SystemMessage(content=DIAGNOSTIC_SYSTEM_PROMPT)]
+    # Pin the thread's forecast_run_id to the system prompt so the agent never
+    # has to guess (or invent) which run it's diagnosing.
+    thread = repo.get_thread(thread_id)
+    system_prompt = DIAGNOSTIC_SYSTEM_PROMPT
+    if thread and thread.forecast_run_id:
+        system_prompt += (
+            "\n\nCONTEXT FOR THIS THREAD:\n"
+            f"- forecast_run_id = {thread.forecast_run_id}\n"
+            "Use this exact run_id when calling get_forecast_run / "
+            "compute_peak_metrics. Do NOT invent another id."
+        )
+
+    messages = [SystemMessage(content=system_prompt)]
     messages += _replay(history)
     messages.append(HumanMessage(content=user_message))
 
@@ -105,8 +117,13 @@ async def chat(
             )
         elif kind == "on_tool_end":
             run_id = ev.get("run_id", "")
-            output = data.get("output", "")
-            output_str = output if isinstance(output, str) else str(output)
+            output = data.get("output")
+            if hasattr(output, "content"):
+                output_str = output.content if isinstance(output.content, str) else str(output.content)
+            elif isinstance(output, str):
+                output_str = output
+            else:
+                output_str = str(output)
             tool_info = pending_tool_calls.pop(run_id, {"name": name, "args": {}})
             repo.add_message(
                 thread_id,
@@ -120,12 +137,12 @@ async def chat(
                 f"{tool_info['name']} → {len(output_str)} chars",
                 extra={"tool": tool_info["name"], "preview": output_str[:200]},
             )
-        elif kind == "on_chain_end" and name == "LangGraph":
-            output = data.get("output", {})
-            msgs = output.get("messages") if isinstance(output, dict) else None
-            if msgs:
-                last = msgs[-1]
-                final_content = getattr(last, "content", "") or ""
+        elif kind == "on_chat_model_end":
+            output = data.get("output")
+            if output is not None and getattr(output, "content", None):
+                # Track the latest AIMessage content — we keep the last non-empty one,
+                # which is the final assistant turn after all tool calls resolve.
+                final_content = output.content if isinstance(output.content, str) else str(output.content)
 
     repo.add_message(thread_id, "assistant", final_content or "(no response)")
     repo.touch_thread(thread_id)
