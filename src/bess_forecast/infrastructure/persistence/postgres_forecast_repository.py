@@ -66,6 +66,24 @@ class PostgresForecastRepository(ForecastRepository):
             rows = conn.execute(sql, {"id": run_id}).all()
         return [ForecastPoint(ts=r[0], kw_pred=float(r[1])) for r in rows]
 
+    def list_runs(self) -> list[ForecastRun]:
+        sql = text("""
+            SELECT id::text, site_id::text, generated_at, horizon_start,
+                   horizon_end, model_name, model_version, quantile, metrics
+            FROM forecast_runs ORDER BY generated_at DESC LIMIT 100
+        """)
+        with self._engine.connect() as conn:
+            rows = conn.execute(sql).all()
+        return [
+            ForecastRun(
+                id=r[0], site_id=r[1], generated_at=r[2],
+                horizon_start=r[3], horizon_end=r[4],
+                model_name=r[5], model_version=r[6], quantile=r[7],
+                metrics=r[8] or {},
+            )
+            for r in rows
+        ]
+
     def get_active_at(self, site_id: str, at):
         """Return the most recent run with generated_at <= `at`."""
         sql = text("""

@@ -12,3 +12,6 @@ class ForecastRepository(ABC):
 
     @abstractmethod
     def list_points(self, run_id: str) -> list[ForecastPoint]: ...
+
+    @abstractmethod
+    def list_runs(self) -> list[ForecastRun]: ...

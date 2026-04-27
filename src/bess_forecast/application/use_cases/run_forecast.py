@@ -78,11 +78,22 @@ def run_forecast(
     ]
 
     report = validate(history, max_kw=asset_max_kw)
-    if report.is_blocking:
-        msgs = "; ".join(f"{i.rule}: {i.message}" for i in report.issues
+    logger.info("Validation: %d warnings, %d blocking",
+                report.warning_count, report.blocking_count)
+
+    # Fail-safe repair: sentinel + sign + gap fill. A real prod pipeline would
+    # store the report and tag the points; here we record summary in the run metrics.
+    history = history.where(history < asset_max_kw)            # drop sentinels
+    history = history.clip(lower=0.0)                          # negatives → 0
+    full_idx = pd.date_range(history.index.min(), history.index.max(),
+                             freq="15min", tz=history.index.tz)
+    history = history.reindex(full_idx).ffill().bfill()
+
+    post = validate(history, max_kw=asset_max_kw)
+    if post.is_blocking:
+        msgs = "; ".join(f"{i.rule}: {i.message}" for i in post.issues
                          if i.severity.value == "BLOCKING")
-        raise RuntimeError(f"Validation blocked the run: {msgs}")
-    logger.info("Validation: %d warnings, 0 blocking", report.warning_count)
+        raise RuntimeError(f"Validation blocked the run after repair: {msgs}")
 
     features = build_features(history)
     train = features.dropna(subset=FEATURE_COLS + ["y"])
@@ -102,7 +113,7 @@ def run_forecast(
             ext_features = build_features(
                 pd.concat([ext, pd.Series([np.nan], index=[ts])])
             )
-            x = ext_features.loc[[ts], FEATURE_COLS].fillna(method="ffill")
+            x = ext_features.loc[[ts], FEATURE_COLS].ffill().bfill()
             yhat = float(model.predict(x)[0])
             preds.append(yhat)
             ext = pd.concat([ext, pd.Series([yhat], index=[ts])])
