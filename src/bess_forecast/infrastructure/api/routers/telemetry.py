@@ -15,5 +15,5 @@ def get_telemetry(
     since: datetime = Query(...),
     until: datetime = Query(...),
 ) -> list[TelemetryDTO]:
-    readings = state.telemetry_repo.load(state.SITE_NAME, since, until)
+    readings = state.telemetry_repo.load(state.SITE_ID, since, until)
     return [TelemetryDTO(ts=r.ts, kw=r.kw, quality_flag=r.quality_flag) for r in readings]

@@ -101,14 +101,43 @@ gen-client:
 frontend:
     cd frontend && npm run dev
 
-# Full local dev stack: db + api in background, frontend in foreground
+# Full local dev stack: db + api (with diagnostic agent endpoint) + generated client + frontend
 dev:
-    @just db-up
-    @just db-migrate
-    uv run python -m bess_forecast serve --reload &
-    @sleep 2
-    @just gen-client
-    @just frontend
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [ -f .env ] || { echo "▸ bootstrapping .env from .env.example"; cp .env.example .env; }
+    [ -f frontend/.env ] || cp frontend/.env.example frontend/.env
+    echo "▸ freeing ports 8000 (api) and 5173 (vite)"
+    for port in 8000 5173; do
+        pids=$(lsof -tiTCP:$port -sTCP:LISTEN 2>/dev/null || true)
+        [ -n "$pids" ] && { echo "  killing $pids on :$port"; kill -9 $pids || true; }
+    done
+    echo "▸ starting docker stack (postgres :5433, adminer :8080)"
+    docker compose up -d
+    echo "▸ applying migrations"
+    uv run alembic upgrade head
+    echo "▸ starting FastAPI (with /diagnostic agent endpoint) on :8000"
+    uv run python -m bess_forecast serve > .dev-api.log 2>&1 &
+    API_PID=$!
+    trap "echo '▸ stopping API'; kill $API_PID 2>/dev/null || true" EXIT INT TERM
+    echo "▸ waiting for /health"
+    until curl -sf http://localhost:8000/health > /dev/null; do sleep 0.5; done
+    echo "▸ generating typed API client"
+    (cd frontend && npm run generate:api)
+    echo "▸ starting React dev server on :5173 (Ctrl-C to stop everything)"
+    cd frontend && npm run dev -- --host --strictPort
+
+# Quick end-to-end smoke: run a forecast then diagnose it through the agent
+smoke:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -z "${OPENAI_API_KEY:-}" ]; then
+        echo "OPENAI_API_KEY not set — skipping the agent step (forecast still runs)"
+        uv run python -m bess_forecast run --csv {{CSV}} --asof {{ASOF}} \
+            --model lgbm --max-kw {{MAX_KW}}
+    else
+        uv run python -m bess_forecast diagnose --csv {{CSV}} --asof {{ASOF}}
+    fi
 
 # ---- Cleanup -------------------------------------------------------------
 

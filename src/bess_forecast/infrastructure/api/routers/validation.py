@@ -8,13 +8,14 @@ from bess_forecast.infrastructure.api.schemas import (
     ValidationIssueDTO,
     ValidationReportDTO,
 )
+from bess_forecast.infrastructure.persistence.csv_telemetry_repository import load_csv
 
 router = APIRouter(prefix="/validation", tags=["validation"])
 
 
 @router.get("/last", response_model=ValidationReportDTO)
 def validate_last() -> ValidationReportDTO:
-    s = state.telemetry_repo.as_series()
+    s = load_csv(state.CSV_PATH)
     report = validate(s, max_kw=state.ASSET_MAX_KW)
     return ValidationReportDTO(
         issues=[

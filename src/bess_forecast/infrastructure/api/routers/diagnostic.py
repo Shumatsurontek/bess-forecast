@@ -19,5 +19,5 @@ def diagnose(run_id: str) -> DiagnosticResponse:
         calendar_repo=state.calendar_repo,
     )
     from bess_forecast.application.use_cases.run_diagnostic import run_diagnostic
-    report = run_diagnostic(run_id, site_id=state.SITE_NAME)
+    report = run_diagnostic(run_id, site_id=state.SITE_ID)
     return DiagnosticResponse(run_id=run_id, report_markdown=report)

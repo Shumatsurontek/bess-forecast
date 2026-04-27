@@ -34,8 +34,8 @@ def trigger_run(
 ) -> ForecastResponse:
     result = run_forecast(
         csv_path=state.CSV_PATH,
-        site_id=state.SITE_NAME,
-        asset_id=state.ASSET_NAME,
+        site_id=state.SITE_ID,
+        asset_id=state.ASSET_ID,
         asof=asof,
         model_name=model,
         asset_max_kw=state.ASSET_MAX_KW,
