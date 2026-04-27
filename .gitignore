@@ -17,3 +17,5 @@ frontend/openapi.json
 frontend/src/api/
 
 .DS_Store
+frontend/tsconfig.tsbuildinfo
+frontend/src/**/*.js
