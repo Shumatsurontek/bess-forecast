@@ -1,32 +1,49 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChartForecast } from '@/components/ChartForecast';
 import { JobLog } from '@/components/JobLog';
 import { KPI } from '@/components/KPI';
 import { RationalePanel } from '@/components/RationalePanel';
+import { RunPicker } from '@/components/RunPicker';
 import { SectionTitle } from '@/components/SectionTitle';
 import { useJob } from '@/hooks/useJob';
 import { forecastRepository } from '@/repositories/forecastRepository';
 
 export default function ForecastPage() {
   const qc = useQueryClient();
+  const nav = useNavigate();
+  const { runId: urlRunId } = useParams<{ runId?: string }>();
   const [asof, setAsof] = useState('2025-12-01T00:00:00');
   const [model, setModel] = useState<'naive' | 'lgbm' | 'timesfm'>('lgbm');
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
 
-  const trigger = useMutation({
-    mutationFn: () => forecastRepository.trigger(asof, model),
-    onSuccess: (d: any) => setActiveRunId(d.run_id),
+  const runsQ = useQuery({
+    queryKey: ['runs'],
+    queryFn: () => forecastRepository.listRuns(),
   });
+  const runs = (runsQ.data as any[]) ?? [];
 
-  const { events, done } = useJob(trigger.data?.job_id);
+  // The "active" run is whatever is in the URL, or the most-recent one.
+  const activeRunId = urlRunId ?? runs[0]?.id ?? null;
 
-  // Pull the saved run when the job finishes (single source of truth: the API).
   const runQ = useQuery({
     queryKey: ['run', activeRunId],
     queryFn: () => forecastRepository.byRunId(activeRunId!),
-    enabled: !!activeRunId && done,
+    enabled: !!activeRunId,
   });
+
+  const trigger = useMutation({
+    mutationFn: () => forecastRepository.trigger(asof, model),
+  });
+  const { events, done } = useJob(trigger.data?.job_id);
+
+  // After a job completes: refetch the runs list and navigate to the new run.
+  useEffect(() => {
+    if (done && trigger.data) {
+      qc.invalidateQueries({ queryKey: ['runs'] });
+      nav(`/forecast/${(trigger.data as any).run_id}`);
+    }
+  }, [done, trigger.data, qc, nav]);
 
   const points: any[] = (runQ.data as any)?.points ?? [];
   const metrics = (runQ.data as any)?.run?.metrics ?? {};
@@ -36,15 +53,12 @@ export default function ForecastPage() {
     forecast: p.kw_pred,
   })), [points]);
 
-  // Refresh the runs list whenever a job completes (sidebar/picker would consume it).
-  if (done && activeRunId) qc.invalidateQueries({ queryKey: ['runs'] });
-
   return (
     <div className="max-w-6xl mx-auto px-6 py-12">
       <SectionTitle
         eyebrow="forecast"
         title="Short-term load — peak shaving lens"
-        subtitle="Quantile q=0.75 biases predictions slightly upward. Watch the pipeline stream stage by stage."
+        subtitle="Quantile q=0.75 biases predictions slightly upward. Watch the pipeline stream stage by stage; every run is persisted and browsable below."
       />
 
       <div className="panel mb-6 flex flex-wrap items-end gap-4">
@@ -96,7 +110,11 @@ export default function ForecastPage() {
              hint="Operating threshold = 85% of max(actuals) over the horizon. Above this line the controller would discharge." />
       </div>
 
-      <ChartForecast data={chartData} threshold={metrics.threshold_kw} />
+      <div className="mb-8">
+        <ChartForecast data={chartData} threshold={metrics.threshold_kw} />
+      </div>
+
+      <RunPicker runs={runs} activeId={activeRunId} />
     </div>
   );
 }

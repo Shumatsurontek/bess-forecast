@@ -20,6 +20,7 @@ export default function App() {
       </nav>
       <Routes>
         <Route path="/" element={<ForecastPage />} />
+        <Route path="/forecast/:runId" element={<ForecastPage />} />
         <Route path="/validation" element={<ValidationPage />} />
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/diagnostic" element={<Navigate to="/chat" replace />} />
