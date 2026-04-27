@@ -1,6 +1,6 @@
-import { NavLink, Route, Routes } from 'react-router-dom';
+import { Navigate, NavLink, Route, Routes } from 'react-router-dom';
 import ForecastPage from '@/pages/ForecastPage';
-import DiagnosticPage from '@/pages/DiagnosticPage';
+import ChatPage from '@/pages/ChatPage';
 import ValidationPage from '@/pages/ValidationPage';
 
 export default function App() {
@@ -14,14 +14,15 @@ export default function App() {
           <div className="flex gap-8 text-sm font-mono">
             <NavLink to="/" end className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>forecast</NavLink>
             <NavLink to="/validation" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>validation</NavLink>
-            <NavLink to="/diagnostic" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>diagnostic</NavLink>
+            <NavLink to="/chat" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>diagnostic</NavLink>
           </div>
         </div>
       </nav>
       <Routes>
         <Route path="/" element={<ForecastPage />} />
         <Route path="/validation" element={<ValidationPage />} />
-        <Route path="/diagnostic" element={<DiagnosticPage />} />
+        <Route path="/chat" element={<ChatPage />} />
+        <Route path="/diagnostic" element={<Navigate to="/chat" replace />} />
       </Routes>
     </div>
   );

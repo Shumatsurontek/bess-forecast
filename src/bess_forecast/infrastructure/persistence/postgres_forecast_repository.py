@@ -16,6 +16,18 @@ class PostgresForecastRepository(ForecastRepository):
 
     def save(self, run: ForecastRun, points: list[ForecastPoint]) -> None:
         with self._engine.begin() as conn:
+            # Idempotency on (site, generated_at, model_version, quantile):
+            # remove the stale run (CASCADE removes its points), then insert fresh.
+            conn.execute(text("""
+                DELETE FROM forecast_runs
+                 WHERE site_id = :site_id
+                   AND generated_at = :generated_at
+                   AND model_version = :model_version
+                   AND quantile IS NOT DISTINCT FROM :quantile
+            """), {
+                "site_id": run.site_id, "generated_at": run.generated_at,
+                "model_version": run.model_version, "quantile": run.quantile,
+            })
             conn.execute(text("""
                 INSERT INTO forecast_runs (id, site_id, generated_at,
                     horizon_start, horizon_end, model_name, model_version,
@@ -23,8 +35,6 @@ class PostgresForecastRepository(ForecastRepository):
                 VALUES (:id, :site_id, :generated_at, :horizon_start,
                     :horizon_end, :model_name, :model_version, :quantile,
                     CAST(:metrics AS JSONB))
-                ON CONFLICT (site_id, generated_at, model_version, quantile)
-                    DO UPDATE SET metrics = EXCLUDED.metrics
             """), {
                 "id": run.id, "site_id": run.site_id,
                 "generated_at": run.generated_at,
@@ -36,7 +46,6 @@ class PostgresForecastRepository(ForecastRepository):
                 conn.execute(text("""
                     INSERT INTO forecast_points (run_id, ts, kw_pred)
                     VALUES (:run_id, :ts, :kw_pred)
-                    ON CONFLICT (run_id, ts) DO UPDATE SET kw_pred = EXCLUDED.kw_pred
                 """), [{"run_id": run.id, "ts": p.ts, "kw_pred": p.kw_pred}
                        for p in points])
 

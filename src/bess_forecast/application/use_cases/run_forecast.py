@@ -18,9 +18,11 @@ from bess_forecast.application.services.feature_service import (
 from bess_forecast.application.services.metrics_service import compute_peak_metrics
 from bess_forecast.application.services.validation_service import validate
 from bess_forecast.domain.entities.forecast import ForecastPoint, ForecastRun
+from bess_forecast.domain.entities.progress_stage import ForecastStage
 from bess_forecast.domain.entities.telemetry import TelemetryReading
 from bess_forecast.domain.ports.forecast_repository import ForecastRepository
 from bess_forecast.domain.ports.model_port import ModelPort
+from bess_forecast.domain.ports.progress_sink import NoopProgressSink, ProgressSink
 from bess_forecast.infrastructure.persistence.csv_telemetry_repository import (
     CsvTelemetryRepository,
 )
@@ -63,7 +65,11 @@ def run_forecast(
     quantile: float = 0.75,
     asset_max_kw: float = 200.0,
     forecast_repo: ForecastRepository | None = None,
+    progress: ProgressSink | None = None,
+    run_id: str | None = None,
 ) -> ForecastResult:
+    progress = progress or NoopProgressSink()
+    progress.emit(ForecastStage.LOADING_CSV, "reading CSV", pct=0.05)
     csv_repo = CsvTelemetryRepository(csv_path, site_id=site_id, asset_id=asset_id)
     series = csv_repo.as_series()
 
@@ -77,31 +83,42 @@ def run_forecast(
         (series.index >= horizon_start) & (series.index <= horizon_end)
     ]
 
+    progress.emit(ForecastStage.VALIDATING_RAW, "running rules on raw history", pct=0.15)
     report = validate(history, max_kw=asset_max_kw)
     logger.info("Validation: %d warnings, %d blocking",
                 report.warning_count, report.blocking_count)
 
-    # Fail-safe repair: sentinel + sign + gap fill. A real prod pipeline would
-    # store the report and tag the points; here we record summary in the run metrics.
+    progress.emit(
+        ForecastStage.REPAIRING,
+        f"sanitizing series ({report.blocking_count} blocking, {report.warning_count} warnings)",
+        pct=0.25,
+        extra={"blocking": report.blocking_count, "warnings": report.warning_count},
+    )
+    # Fail-safe repair: sentinel + sign + gap fill.
     history = history.where(history < asset_max_kw)            # drop sentinels
     history = history.clip(lower=0.0)                          # negatives → 0
     full_idx = pd.date_range(history.index.min(), history.index.max(),
                              freq="15min", tz=history.index.tz)
     history = history.reindex(full_idx).ffill().bfill()
 
+    progress.emit(ForecastStage.VALIDATING_POST, "re-validating repaired series", pct=0.35)
     post = validate(history, max_kw=asset_max_kw)
     if post.is_blocking:
         msgs = "; ".join(f"{i.rule}: {i.message}" for i in post.issues
                          if i.severity.value == "BLOCKING")
         raise RuntimeError(f"Validation blocked the run after repair: {msgs}")
 
+    progress.emit(ForecastStage.BUILDING_FEATURES, "lags + calendar features", pct=0.45)
     features = build_features(history)
     train = features.dropna(subset=FEATURE_COLS + ["y"])
     X_train, y_train = train[FEATURE_COLS], train["y"]
 
+    progress.emit(ForecastStage.FITTING, f"training {model_name}", pct=0.55,
+                  extra={"n_samples": int(len(X_train))})
     model = _build_model(model_name, quantile=quantile, horizon=horizon_quarters)
     model.fit(X_train, y_train)
 
+    progress.emit(ForecastStage.PREDICTING, f"predicting {horizon_quarters} quarter-hours", pct=0.75)
     horizon_index = pd.date_range(
         horizon_start, periods=horizon_quarters, freq="15min", tz=series.index.tz
     )
@@ -130,6 +147,7 @@ def run_forecast(
         TelemetryReading(site_id, asset_id, ts.to_pydatetime(), float(v))
         for ts, v in actual_horizon.items()
     ]
+    progress.emit(ForecastStage.COMPUTING_METRICS, "pinball + peak capture", pct=0.9)
     threshold_kw = (
         float(np.quantile([r.kw for r in actuals_list], 0.85))
         if actuals_list else float(np.quantile(history.dropna(), 0.85))
@@ -148,7 +166,7 @@ def run_forecast(
     }
 
     run = ForecastRun(
-        id=str(uuid.uuid4()),
+        id=run_id or str(uuid.uuid4()),
         site_id=site_id,
         generated_at=asof,
         horizon_start=horizon_start,
@@ -158,6 +176,10 @@ def run_forecast(
         quantile=quantile if model_name != "naive" else None,
         metrics=metrics,
     )
+    progress.emit(ForecastStage.SAVING, "persisting run + points", pct=0.97,
+                  extra={"run_id": run.id})
     if forecast_repo is not None:
         forecast_repo.save(run, points)
+    progress.emit(ForecastStage.DONE, "complete", pct=1.0,
+                  extra={"run_id": run.id, "metrics": metrics})
     return ForecastResult(run=run, points=points, metrics=metrics)

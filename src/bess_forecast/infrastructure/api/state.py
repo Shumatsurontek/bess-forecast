@@ -77,9 +77,14 @@ def _bootstrap_postgres() -> tuple[str, str]:
     return site_id, asset_id
 
 
+agent_repo = None  # populated when Postgres is available
+
 if DATABASE_URL:
     try:
         SITE_ID, ASSET_ID = _bootstrap_postgres()
+        from bess_forecast.infrastructure.persistence.postgres_agent_repository import (
+            PostgresAgentRepository,
+        )
         from bess_forecast.infrastructure.persistence.postgres_forecast_repository import (
             PostgresForecastRepository,
         )
@@ -88,6 +93,7 @@ if DATABASE_URL:
         )
         forecast_repo = PostgresForecastRepository(DATABASE_URL)
         telemetry_repo = PostgresTelemetryRepository(DATABASE_URL)
+        agent_repo = PostgresAgentRepository(DATABASE_URL)
         logger.info("Repos: Postgres @ %s", DATABASE_URL.split("@")[-1])
     except Exception as e:
         logger.warning("Postgres bootstrap failed (%s); falling back to in-memory", e)

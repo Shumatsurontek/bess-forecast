@@ -1,18 +1,29 @@
 from __future__ import annotations
 
+import logging
+import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from pydantic import BaseModel
 
 from bess_forecast.application.use_cases.run_forecast import run_forecast
 from bess_forecast.infrastructure.api import state
+from bess_forecast.infrastructure.api.jobs import JobBusProgressSink, bus
 from bess_forecast.infrastructure.api.schemas import (
     ForecastPointDTO,
     ForecastResponse,
     ForecastRunDTO,
+    JobAcceptedDTO,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/forecast", tags=["forecast"])
+
+
+class TriggerRunRequest(BaseModel):
+    asof: datetime
+    model: str = "lgbm"
 
 
 def _to_dto(run, points) -> ForecastResponse:
@@ -27,11 +38,46 @@ def _to_dto(run, points) -> ForecastResponse:
     )
 
 
-@router.post("/run", response_model=ForecastResponse)
+@router.post("/run", response_model=JobAcceptedDTO)
 def trigger_run(
     asof: datetime = Query(..., description="Forecast as-of timestamp"),
     model: str = Query("lgbm", pattern="^(naive|lgbm|timesfm)$"),
+    tasks: BackgroundTasks = None,
+) -> JobAcceptedDTO:
+    """Kick off a forecast in the background. Stream progress over /ws/jobs/{job_id}."""
+    job_id = bus.new_job_id()
+    run_id = str(uuid.uuid4())  # pre-allocate so the front can navigate immediately
+    sink = JobBusProgressSink(bus, job_id)
+
+    def _work() -> None:
+        try:
+            run_forecast(
+                csv_path=state.CSV_PATH,
+                site_id=state.SITE_ID,
+                asset_id=state.ASSET_ID,
+                asof=asof,
+                model_name=model,
+                asset_max_kw=state.ASSET_MAX_KW,
+                forecast_repo=state.forecast_repo,
+                progress=sink,
+                run_id=run_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("forecast job %s failed", job_id)
+            sink.emit("error", str(exc), extra={"type": exc.__class__.__name__})
+        finally:
+            bus.close(job_id)
+
+    tasks.add_task(_work)
+    return JobAcceptedDTO(job_id=job_id, run_id=run_id)
+
+
+@router.post("/run-sync", response_model=ForecastResponse)
+def trigger_run_sync(
+    asof: datetime = Query(...),
+    model: str = Query("lgbm", pattern="^(naive|lgbm|timesfm)$"),
 ) -> ForecastResponse:
+    """Synchronous variant — useful for the CLI / smoke tests."""
     result = run_forecast(
         csv_path=state.CSV_PATH,
         site_id=state.SITE_ID,

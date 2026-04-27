@@ -1,41 +1,52 @@
 import { useMemo, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChartForecast } from '@/components/ChartForecast';
+import { JobLog } from '@/components/JobLog';
 import { KPI } from '@/components/KPI';
 import { SectionTitle } from '@/components/SectionTitle';
+import { useJob } from '@/hooks/useJob';
 import { forecastRepository } from '@/repositories/forecastRepository';
 
 export default function ForecastPage() {
+  const qc = useQueryClient();
   const [asof, setAsof] = useState('2025-12-01T00:00:00');
   const [model, setModel] = useState<'naive' | 'lgbm' | 'timesfm'>('lgbm');
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
 
   const trigger = useMutation({
     mutationFn: () => forecastRepository.trigger(asof, model),
+    onSuccess: (d: any) => setActiveRunId(d.run_id),
   });
 
-  const runs = useQuery({
-    queryKey: ['runs', trigger.isSuccess ? trigger.data?.run.id : null],
-    queryFn: () => forecastRepository.listRuns(),
+  const { events, done } = useJob(trigger.data?.job_id);
+
+  // Pull the saved run when the job finishes (single source of truth: the API).
+  const runQ = useQuery({
+    queryKey: ['run', activeRunId],
+    queryFn: () => forecastRepository.byRunId(activeRunId!),
+    enabled: !!activeRunId && done,
   });
 
-  const lastRun: any = trigger.data ?? (runs.data && (runs.data as any[])[0]);
-  const points: any[] = trigger.data?.points ?? [];
-  const metrics = lastRun?.run?.metrics ?? lastRun?.metrics ?? {};
+  const points: any[] = (runQ.data as any)?.points ?? [];
+  const metrics = (runQ.data as any)?.run?.metrics ?? {};
 
-  const chartData = useMemo(() => points.map(p => ({
+  const chartData = useMemo(() => points.map((p: any) => ({
     ts: new Date(p.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     forecast: p.kw_pred,
   })), [points]);
+
+  // Refresh the runs list whenever a job completes (sidebar/picker would consume it).
+  if (done && activeRunId) qc.invalidateQueries({ queryKey: ['runs'] });
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-12">
       <SectionTitle
         eyebrow="forecast"
         title="Short-term load — peak shaving lens"
-        subtitle="Quantile q=0.75 biases predictions slightly upward. The aim is not RMSE — it's catching peaks before they happen."
+        subtitle="Quantile q=0.75 biases predictions slightly upward. Watch the pipeline stream stage by stage."
       />
 
-      <div className="panel mb-8 flex flex-wrap items-end gap-4">
+      <div className="panel mb-6 flex flex-wrap items-end gap-4">
         <label className="block">
           <div className="text-muted text-xs uppercase tracking-widest mb-1">As of</div>
           <input
@@ -58,12 +69,18 @@ export default function ForecastPage() {
         </label>
         <button
           onClick={() => trigger.mutate()}
-          className="bg-accent text-navy-deep font-semibold px-5 py-2 rounded hover:brightness-110 transition"
-          disabled={trigger.isPending}
+          disabled={trigger.isPending || (!!trigger.data && !done)}
+          className="bg-accent text-navy-deep font-semibold px-5 py-2 rounded hover:brightness-110 disabled:opacity-60"
         >
-          {trigger.isPending ? 'Running…' : 'Run forecast'}
+          {!!trigger.data && !done ? 'Streaming…' : 'Run forecast'}
         </button>
       </div>
+
+      {trigger.data && (
+        <div className="mb-6">
+          <JobLog events={events} done={done} />
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <KPI label="Pinball loss" value={fmt(metrics.pinball_loss, 2)} unit="kW" accent />

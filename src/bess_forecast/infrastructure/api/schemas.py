@@ -49,3 +49,28 @@ class ValidationReportDTO(BaseModel):
 class DiagnosticResponse(BaseModel):
     run_id: str
     report_markdown: str
+
+
+class JobAcceptedDTO(BaseModel):
+    job_id: str
+    run_id: str | None = None
+
+
+class AgentThreadDTO(BaseModel):
+    id: str
+    title: str
+    forecast_run_id: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgentMessageDTO(BaseModel):
+    id: str
+    thread_id: str
+    role: str
+    content: str
+    tool_name: str | None
+    tool_args: dict[str, Any] | None
+    tool_result: dict[str, Any] | None
+    tokens: int | None
+    created_at: datetime
