@@ -74,7 +74,8 @@ diagnose asof=ASOF:
 # Start postgres + adminer
 db-up:
     docker compose up -d
-    @echo "Adminer at http://localhost:8080"
+    @echo "Dozzle (logs)  → http://localhost:8080"
+    @echo "Adminer (SQL)  → http://localhost:8081"
 
 db-down:
     docker compose down

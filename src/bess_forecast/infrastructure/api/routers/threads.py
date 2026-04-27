@@ -1,7 +1,6 @@
 """Conversational agent threads — list / create / read messages / chat."""
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
@@ -103,5 +102,6 @@ def send_message(
         finally:
             bus.close(job_id)
 
-    tasks.add_task(asyncio.create_task, _run())
+    # FastAPI awaits async tasks added this way — no need for asyncio.create_task.
+    tasks.add_task(_run)
     return JobAcceptedDTO(job_id=job_id)

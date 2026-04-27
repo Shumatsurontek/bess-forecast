@@ -155,7 +155,13 @@ def run_forecast(
     pm = compute_peak_metrics(points, actuals_list,
                               threshold_kw=threshold_kw, quantile=quantile)
 
-    metrics = {
+    def _json_safe(v):
+        # JSON has no NaN / Inf — keep the column NULL-able instead.
+        if isinstance(v, float) and (np.isnan(v) or np.isinf(v)):
+            return None
+        return v
+
+    metrics = {k: _json_safe(v) for k, v in {
         "pinball_loss": pm.pinball_loss,
         "rmse": pm.rmse,
         "mae": pm.mae,
@@ -163,7 +169,8 @@ def run_forecast(
         "peaks_total": pm.total_peaks,
         "peak_capture_rate": pm.capture_rate,
         "threshold_kw": pm.threshold_kw,
-    }
+        "horizon_has_actuals": len(actuals_list) > 0,
+    }.items()}
 
     run = ForecastRun(
         id=run_id or str(uuid.uuid4()),

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChartForecast } from '@/components/ChartForecast';
 import { JobLog } from '@/components/JobLog';
 import { KPI } from '@/components/KPI';
+import { RationalePanel } from '@/components/RationalePanel';
 import { SectionTitle } from '@/components/SectionTitle';
 import { useJob } from '@/hooks/useJob';
 import { forecastRepository } from '@/repositories/forecastRepository';
@@ -82,11 +83,17 @@ export default function ForecastPage() {
         </div>
       )}
 
+      <RationalePanel />
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <KPI label="Pinball loss" value={fmt(metrics.pinball_loss, 2)} unit="kW" accent />
-        <KPI label="RMSE" value={fmt(metrics.rmse, 2)} unit="kW" />
-        <KPI label="Peak capture" value={`${metrics.peaks_captured ?? '–'}/${metrics.peaks_total ?? '–'}`} />
-        <KPI label="Threshold" value={fmt(metrics.threshold_kw, 1)} unit="kW" />
+        <KPI label="Pinball loss" value={fmt(metrics.pinball_loss, 2)} unit="kW" accent
+             hint="Quantile (α=0.75) loss — penalizes under-forecasts heavier than over-forecasts. Lower is better." />
+        <KPI label="RMSE" value={fmt(metrics.rmse, 2)} unit="kW"
+             hint="Root mean squared error vs the actuals over the horizon. Symmetric — informational only here." />
+        <KPI label="Peak capture" value={`${metrics.peaks_captured ?? '–'}/${metrics.peaks_total ?? '–'}`}
+             hint="Of the actual peaks above the threshold, how many did the forecast also place above? The decision-relevant metric." />
+        <KPI label="Threshold" value={fmt(metrics.threshold_kw, 1)} unit="kW"
+             hint="Operating threshold = 85% of max(actuals) over the horizon. Above this line the controller would discharge." />
       </div>
 
       <ChartForecast data={chartData} threshold={metrics.threshold_kw} />

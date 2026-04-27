@@ -16,11 +16,37 @@ services:
       timeout: 5s
       retries: 5
 
+  # Live application + container log viewer (replaces adminer on :8080).
+  # Browse: http://localhost:8080 — picks up logs from every container in this stack
+  # plus the API tail sidecar below.
+  logs:
+    image: amir20/dozzle:latest
+    container_name: bess_logs
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      DOZZLE_LEVEL: info
+      DOZZLE_FILTER: "name=bess_*"
+
+  # Tail the locally-running API log (`.dev-api.log`) into a container so it
+  # shows up in Dozzle as `bess_api`. `tail -F` retries when the file is missing.
+  api_tail:
+    image: alpine:3.19
+    container_name: bess_api
+    # `tail -F` polls — it tolerates the file being absent or rotated.
+    command: ["sh", "-c", "tail -F /log/.dev-api.log 2>&1"]
+    volumes:
+      - .:/log:ro
+    restart: unless-stopped
+
+  # Postgres SQL browser (moved off :8080).
   adminer:
     image: adminer:4
     container_name: bess_adminer
     ports:
-      - "8080:8080"
+      - "8081:8080"
     depends_on:
       postgres:
         condition: service_healthy
