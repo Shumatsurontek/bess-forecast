@@ -1,0 +1,48 @@
+[project]
+name = "bess_forecast"
+version = "0.1.0"
+description = "BESS short-term load forecast pipeline (Tiime case study)"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "pyarrow>=15",
+    "lightgbm>=4.3",
+    "scikit-learn>=1.5",
+    "holidays>=0.50",
+    "matplotlib>=3.8",
+    "pydantic>=2.9",
+    "typer>=0.12",
+    "python-dotenv>=1.0",
+    "psycopg[binary]>=3.2",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "langchain>=0.3",
+    "langchain-openai>=0.2",
+    "langgraph>=0.2.50",
+    "langsmith>=0.1.135",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-mock>=3"]
+timesfm = ["torch>=2.3", "transformers>=4.45"]
+
+[project.scripts]
+bess_forecast = "bess_forecast.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bess_forecast"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

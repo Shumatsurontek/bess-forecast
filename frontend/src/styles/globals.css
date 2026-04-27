@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body { @apply bg-navy-deep text-ink; }
+  h1, h2, h3 { @apply font-serif; }
+  .num { @apply font-mono tabular-nums; }
+}
+
+@layer components {
+  .panel { @apply bg-navy/70 ring-1 ring-white/5 rounded-lg p-6; }
+  .badge { @apply px-2 py-0.5 rounded text-xs font-mono uppercase tracking-wide; }
+  .badge-block { @apply badge bg-red-500/15 text-red-300; }
+  .badge-warn  { @apply badge bg-accent/15 text-accent; }
+  .nav-link { @apply text-muted hover:text-ink transition-colors; }
+  .nav-link.active { @apply text-accent; }
+}
