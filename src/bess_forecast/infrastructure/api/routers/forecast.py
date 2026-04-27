@@ -30,7 +30,7 @@ def _to_dto(run, points) -> ForecastResponse:
 @router.post("/run", response_model=ForecastResponse)
 def trigger_run(
     asof: datetime = Query(..., description="Forecast as-of timestamp"),
-    model: str = Query("lgbm", regex="^(naive|lgbm|timesfm)$"),
+    model: str = Query("lgbm", pattern="^(naive|lgbm|timesfm)$"),
 ) -> ForecastResponse:
     result = run_forecast(
         csv_path=state.CSV_PATH,
